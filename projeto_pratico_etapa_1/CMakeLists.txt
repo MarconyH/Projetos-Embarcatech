@@ -34,10 +34,13 @@ project(projeto_pratico_etapa_1 C CXX ASM)
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
+add_subdirectory(no-OS-FatFS-SD-SPI-RPi-Pico/FatFs_SPI build)
 
 add_executable(projeto_pratico_etapa_1 projeto_pratico_etapa_1.c 
 inc/mfrc522.c
-inc/tag_data_handler.c)
+inc/tag_data_handler.c
+inc/sd_card_handler.c
+inc/hw_config.c)
 
 pico_set_program_name(projeto_pratico_etapa_1 "projeto_pratico_etapa_1")
 pico_set_program_version(projeto_pratico_etapa_1 "0.1")
@@ -48,18 +51,14 @@ pico_enable_stdio_usb(projeto_pratico_etapa_1 1)
 
 # Add the standard library to the build
 target_link_libraries(projeto_pratico_etapa_1
-        pico_stdlib)
+        pico_stdlib
+        hardware_spi
+        FatFs_SPI)
 
 # Add the standard include files to the build
 target_include_directories(projeto_pratico_etapa_1 PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
-
-# Add any user requested libraries
-target_link_libraries(projeto_pratico_etapa_1 
-        hardware_spi
-        
-        )
 
 pico_add_extra_outputs(projeto_pratico_etapa_1)
 
