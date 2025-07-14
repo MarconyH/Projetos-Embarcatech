@@ -40,7 +40,8 @@ add_executable(projeto_pratico_etapa_1 projeto_pratico_etapa_1.c
 inc/mfrc522.c
 inc/tag_data_handler.c
 inc/sd_card_handler.c
-inc/hw_config.c)
+inc/hw_config.c
+inc/spi_manager.c)
 
 pico_set_program_name(projeto_pratico_etapa_1 "projeto_pratico_etapa_1")
 pico_set_program_version(projeto_pratico_etapa_1 "0.1")

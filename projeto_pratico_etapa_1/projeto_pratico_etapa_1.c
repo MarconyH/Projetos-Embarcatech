@@ -1,3 +1,5 @@
+// Arquivo: projeto_pratico_etapa_1.c (MODIFICADO)
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
@@ -10,8 +12,11 @@
 // Nossas bibliotecas customizadas e de suporte
 #include "inc/mfrc522.h"
 #include "inc/tag_data_handler.h"
-#include "inc/sd_card_handler.h" // A biblioteca que vamos usar
+#include "inc/sd_card_handler.h" 
 #include "hw_config.h" 
+
+// *** ALTERAÇÃO 1: Incluir o gerenciador de SPI ***
+#include "inc/spi_manager.h" // Biblioteca para multiplexar o SPI0
 
 // Mapeamento dos botões
 #define BTN_A 5
@@ -115,10 +120,12 @@ void provision_new_tag(MFRC522Ptr_t mfrc) {
     sleep_ms(3000);
 }
 
+// *** ALTERAÇÃO 2: Adicionar multiplexação dentro da função que usa ambos os periféricos ***
 // Função para processar o embarque e chamar a biblioteca para gravar no SD
 void process_student_boarding(MFRC522Ptr_t mfrc) {
     printf("\n--- OPERACAO DO ONIBUS ---\nAproxime a tag do aluno:\n");
 
+    // A SPI já foi ativada para RFID ao entrar no estado STATE_READING.
     while (!PICC_IsNewCardPresent(mfrc) || !PICC_ReadCardSerial(mfrc)) {
         if (currentState != STATE_READING) return;
         sleep_ms(100);
@@ -138,12 +145,22 @@ void process_student_boarding(MFRC522Ptr_t mfrc) {
         printf(" Aluno: %s | Viagem No.: %u\n", student_data.fields.student_name, student_data.fields.trip_count);
         printf("----------------------------------\n");
 
+        // --- MUDANÇA DE CONTEXTO: VAMOS USAR O CARTÃO SD ---
+        printf("LOG: Trocando SPI para o Cartao SD...\n");
+        spi_manager_activate_sd(); // Ativa SPI para o SD
+
         // --- CHAMA A BIBLIOTECA PARA SALVAR NO CARTÃO SD ---
         if (Sdh_LogBoarding(&student_data)) {
             printf("LOG: Registro salvo com sucesso no cartao SD.\n");
         } else {
             printf("!!! ALERTA: FALHA AO GRAVAR LOG NO CARTAO SD !!!\n");
         }
+        
+        // --- MUDANÇA DE CONTEXTO: VOLTAMOS PARA O RFID ---
+        // Essencial para que a próxima leitura de tag na mesma sessão funcione
+        printf("LOG: Retornando SPI para o Leitor RFID...\n");
+        spi_manager_activate_rfid(); // Ativa SPI para o RFID
+
     } else {
         printf(">>> FALHA NO EMBARQUE! Status: %s <<<\n", GetStatusCodeName(status));
     }
@@ -155,10 +172,12 @@ void process_student_boarding(MFRC522Ptr_t mfrc) {
 // =================================================================================
 // FUNÇÃO PRINCIPAL
 // =================================================================================
+// =================================================================================
+// FUNÇÃO PRINCIPAL
+// =================================================================================
 void main() {
     stdio_init_all();
     
-    // Espera pela conexão do monitor serial
     while (!stdio_usb_connected()) {
         sleep_ms(100);
     }
@@ -166,16 +185,34 @@ void main() {
     printf("\nMonitor Serial Conectado! Iniciando sistema...\n");
     sleep_ms(1000);
 
+    // --- ALTERAÇÃO PRINCIPAL: INICIALIZAR O RFID PRIMEIRO ---
+
+    // Passo 1: Inicializa o periférico mais sensível, o RFID.
+    printf("Inicializando leitor RFID (SPI0)...\n");
+    MFRC522Ptr_t mfrc = MFRC522_Init();
+    // Garante que o SPI está configurado para o RFID antes do PCD_Init
+    spi_manager_activate_rfid();
+    PCD_Init(mfrc, spi0); 
+    printf(">> SUCESSO: Leitor RFID inicializado.\n");
+    
+    printf("Aproxime uma tag RFID para iniciar...\n");
+    while (!PICC_IsNewCardPresent(mfrc) || !PICC_ReadCardSerial(mfrc)) {
+        sleep_ms(100);
+    }
+    printf("Tag RFID detectada! Sistema pronto.\n");
+
+    // Passo 2: Agora, inicializa o cartão SD.
     printf("Inicializando e montando cartao SD (SPI0)...\n");
+    // Garante que o SPI está configurado para o SD antes do Sdh_Init
+    spi_manager_activate_sd(); 
     if (!Sdh_Init()) {
         printf("!!! ERRO CRITICO: CARTAO SD NAO FUNCIONAL. PARANDO. !!!\n");
         while(1);
     }
+    // NOTA: Após este ponto, o SPI está configurado para o Cartão SD.
+    // A máquina de estados abaixo irá reconfigurá-lo conforme necessário.
 
-    // --- INICIALIZAÇÃO DOS MÓDULOS ---
-    printf("Inicializando leitor RFID (SPI1)...\n");
-    MFRC522Ptr_t mfrc = MFRC522_Init();
-    PCD_Init(mfrc, spi1); 
+    // --- FIM DA ALTERAÇÃO DE ORDEM ---
     
     // --- INICIALIZAÇÃO DOS BOTÕES E INTERRUPÇÕES ---
     printf("Inicializando botoes...\n");
@@ -220,18 +257,21 @@ void main() {
                     break;
                 case STATE_READING:
                     printf("\nMODO LEITURA (Onibus) ATIVADO [A->A].\n");
+                    spi_manager_activate_rfid(); // Prepara o SPI para o leitor RFID
                     break;
                 case STATE_WRITING:
                     printf("\nMODO ESCRITA (Novas Tags) ATIVADO [A->B].\n");
+                    spi_manager_activate_rfid(); // Prepara o SPI para o leitor RFID
                     break;
                 case STATE_SD_READ:
                      printf("\nMODO LEITURA DE SD ATIVADO [B->A].\n");
+                     spi_manager_activate_sd(); // Prepara o SPI para o cartão SD
                     break;
             }
             lastKnownState = currentState;
         }
 
-        // Bloco 2: Executa a AÇÃO contínua de cada estado
+        // Bloco 2: Executa a AÇÃO contínua de cada estado (esta parte não muda)
         switch (currentState) {
             case STATE_READING:
                 process_student_boarding(mfrc);
@@ -241,17 +281,17 @@ void main() {
                 break;
             case STATE_SD_READ:
                 Sdh_PrintLogsToSerial();
-                currentState = STATE_SELECTION; // Retorna ao menu automaticamente
+                currentState = STATE_SELECTION; 
                 break;
             case STATE_WAIT_FOR_SECOND_KEY:
                 if (to_ms_since_boot(get_absolute_time()) - wait_start_time > WAIT_TIMEOUT_MS) {
                     printf("\nTempo de espera esgotado! Voltando ao menu principal.\n");
                     currentState = STATE_SELECTION;
                 }
-                __wfi(); // Dorme enquanto espera
+                __wfi(); 
                 break;
             case STATE_SELECTION:
-                __wfi(); // Apenas dorme e espera
+                __wfi(); 
                 break;
         }
     }
