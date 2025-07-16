@@ -129,6 +129,66 @@ bool Sdh_PrintLogsToSerial() {
     return true;
 }
 
+bool Sdh_ReadLogFile(char *buffer, uint32_t buffer_size) {
+    FIL fil;
+    FRESULT fr;
+
+    // Garante que o buffer esteja limpo antes de começar
+    memset(buffer, 0, buffer_size);
+
+    fr = f_open(&fil, LOG_FILENAME, FA_READ);
+    if (fr != FR_OK) {
+        if (fr != FR_NO_FILE) {
+            printf("SD_READ: Falha ao abrir o arquivo de log. Codigo: %d\n", fr);
+        }
+        return false; // Retorna false se o arquivo não existe ou se houve erro
+    }
+
+    FSIZE_t file_size = f_size(&fil);
+    if (file_size == 0) {
+        printf("SD_READ: Arquivo de log esta vazio.\n");
+        f_close(&fil);
+        return false; // Arquivo existe, mas está vazio
+    }
+
+    if (file_size >= buffer_size) {
+        printf("SD_READ: ERRO! O conteudo do log (%u bytes) excede o tamanho do buffer (%u bytes).\n", (uint32_t)file_size, buffer_size);
+        f_close(&fil);
+        return false; // Evita overflow de buffer
+    }
+
+    UINT bytes_read;
+    fr = f_read(&fil, buffer, file_size, &bytes_read);
+    if (fr != FR_OK || bytes_read != file_size) {
+        printf("SD_READ: Falha ao ler o conteudo do arquivo de log. Codigo: %d\n", fr);
+        f_close(&fil);
+        return false;
+    }
+
+    // O buffer já foi preenchido com \0 por memset, então a null-terminação é garantida.
+    
+    f_close(&fil);
+    return true; // Sucesso, dados lidos para o buffer
+}
+
+/**
+ * @brief Apaga o arquivo de log do cartão SD.
+ */
+bool Sdh_DeleteLogFile(void) {
+    FRESULT fr = f_unlink(LOG_FILENAME);
+
+    if (fr == FR_OK) {
+        printf("SD_DELETE: Arquivo '%s' apagado com sucesso.\n", LOG_FILENAME);
+        return true;
+    } else if (fr == FR_NO_FILE) {
+        printf("SD_DELETE: Arquivo '%s' nao encontrado para apagar (o que é ok).\n", LOG_FILENAME);
+        return true; // Consideramos sucesso se o arquivo já não existe
+    } else {
+        printf("SD_DELETE: Erro ao apagar o arquivo '%s'. Codigo: %d\n", LOG_FILENAME, fr);
+        return false;
+    }
+}
+
 
 /**
  * @brief (Opcional) Função de teste que demonstra as capacidades da biblioteca.
