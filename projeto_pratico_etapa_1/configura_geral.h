@@ -31,9 +31,9 @@
 #define WIFI_INTERVALO_CONEXAO_MS 60000      // 60 segundos para produção
 #define WIFI_TEMPO_CONEXAO_ATIVA_MS 30000    // 30 segundos ativo após conectar
 
-#define WIFI_SSID "Starlink" 
-#define WIFI_PASS "19999999"
-#define MQTT_BROKER_IP "192.168.0.20"
+#define WIFI_SSID "Internet" 
+#define WIFI_PASS "12345678"
+#define MQTT_BROKER_IP "192.168.202.58"
 #define MQTT_BROKER_PORT 1883
 #define TOPICO "teste"
 
